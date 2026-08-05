@@ -8,7 +8,7 @@ from .r1_loco_api import *
 """
 class LocoClient(Client):
     def __init__(self):
-        super().__init__(LOCO_SERVICE_NAME, False)
+        super().__init__(LOCO_SERVICE_NAME, False) 
         self.first_shake_hand_stage_ = -1
 
     def Init(self):
