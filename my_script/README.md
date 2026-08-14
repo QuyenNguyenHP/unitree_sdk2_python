@@ -35,6 +35,7 @@ not run two motion controllers at the same time.
 | `battery_check.py` | Monitor BMS charge, voltage, current, and temperature data | No |
 | `list_r1_topic.py` | Discover visible `rt/...` DDS topics | No |
 | `r1_mode_check.py` | Monitor FSM, sport state, velocity, and low-level mode | No |
+| `r1_joint_positions.py` | Capture one read-only snapshot of all 26 joint positions | No |
 | `r1_action.py` | List and execute firmware-provided arm gestures | Yes |
 | `r1_keyboard_control.py` | Keyboard locomotion and lie/stand control | Yes |
 | `r1_arm_keyboard_control.py` | Control ten individual arm joints through `rt/arm_sdk` | Yes |
@@ -45,6 +46,18 @@ not run two motion controllers at the same time.
 | `r1_face_recognition.py` | Recognize known people in the R1 camera stream | No |
 
 ## Monitoring and Discovery
+
+### `r1_joint_positions.py`
+
+Capture one `rt/lowstate` snapshot and print all 26 physical joint positions in
+radians and degrees:
+
+```bash
+/usr/bin/python3 my_script/r1_joint_positions.py eth10
+```
+
+The script only subscribes to robot state, sends no command, and works in any
+FSM mode. Normal real-hardware safety precautions still apply.
 
 ### `battery_check.py`
 
