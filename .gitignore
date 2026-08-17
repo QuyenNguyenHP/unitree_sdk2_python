@@ -37,3 +37,8 @@ __pycache__
 
 # python
 dist/
+
+# R1 stereo runtime artifacts (downloaded/generated locally)
+my_script/r1_yolo_world_stereo/*.pt
+my_script/r1_yolo_world_stereo/*.npz
+my_script/r1_yolo_world_stereo/weights/
