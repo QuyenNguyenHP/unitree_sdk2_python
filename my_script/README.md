@@ -42,6 +42,7 @@ not run two motion controllers at the same time.
 | `r1_neck_keyboard_control.py` | Control neck pitch/yaw through `rt/arm_sdk` | Yes |
 | `text_to_robot.py` | Speak text with the robot's built-in TTS service | No |
 | `english_text_to_robot.py` | Generate English TTS locally and stream it to the robot | No |
+| `led_control.py` | Set the robot LED strip to a chosen RGB color | No |
 | `video_robot_face_detection.py` | Detect faces in the R1 camera stream | No |
 | `r1_face_recognition.py` | Recognize known people in the R1 camera stream | No |
 
@@ -282,6 +283,19 @@ and `--max-speed-deg-s`.
 
 ## Audio
 
+The Unitree `AudioClient` talks to the robot `voice` service over DDS RPC. In
+this repository it is used for:
+
+- `TtsMaker(text, speaker_id)`: built-in robot text-to-speech. Use
+  `speaker_id 0` for Chinese and `speaker_id 1` for English.
+- `GetVolume()` / `SetVolume(volume)`: read or change the system speaker volume
+  in the `0`-`100` range.
+- `LedControl(R, G, B)`: set the LED strip color with `0`-`255` red, green,
+  and blue values. Keep more than `200 ms` between calls.
+- `PlayStream(app_name, stream_id, pcm_data)`: stream PCM audio to the robot.
+  The required format is `16 kHz`, mono, `16-bit` PCM.
+- `PlayStop(app_name)`: stop playback started by `PlayStream(...)`.
+
 ### `text_to_robot.py`
 
 Send text to the robot's built-in `TtsMaker(...)` service:
@@ -317,6 +331,35 @@ sudo apt install libttspico-utils ffmpeg
 The script prefers `pico2wave`, then falls back to `espeak-ng` or `espeak` if
 installed. It normalizes output to 16 kHz, mono, 16-bit PCM, waits for playback,
 and calls `PlayStop()` before exiting.
+
+### `led_control.py`
+
+Set the robot LED strip to a specific RGB color:
+
+```bash
+/usr/bin/python3 my_script/led_control.py eth10
+/usr/bin/python3 my_script/led_control.py eth10 --color red
+/usr/bin/python3 my_script/led_control.py eth10 --r 255 --g 128 --b 0
+```
+
+When no color arguments are passed, the script shows a terminal menu and lets
+the user choose a basic color with keys `1` to `9`.
+
+Useful options:
+
+- `--color`: one of `off`, `white`, `red`, `green`, `blue`, `yellow`, `cyan`,
+  `magenta`, or `orange`.
+- `--r`, `--g`, `--b`: manual RGB values from `0` to `255`. If any of these
+  are set, all three must be provided.
+- `--hold`: keep the script alive after sending the command; default `0.3`
+  seconds.
+
+Examples:
+
+```bash
+/usr/bin/python3 my_script/led_control.py eth10 --color cyan --hold 1
+/usr/bin/python3 my_script/led_control.py eth10 --r 32 --g 32 --b 255
+```
 
 ## Vision
 
