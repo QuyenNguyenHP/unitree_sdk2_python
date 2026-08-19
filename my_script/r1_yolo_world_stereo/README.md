@@ -10,21 +10,97 @@ UDP 5002/5003 -> rectify -> StereoSGBM -> metric 3D -> YOLO-World -> distance
 
 Unitree officially documents starting Stereo Patch PC1 manually in the app.
 The generic `robot_state` DDS API may expose it to the PC, depending on the R1
-firmware. List services first (this makes no changes):
+firmware. `r1_service_control.py` is an experimental wrapper around that DDS
+API; it does not modify startup files on PC1 and does not guess service names.
+
+First identify the network interface connected to R1:
 
 ```bash
-/usr/bin/python3 r1_service_control.py <network-interface> list
+ip -br address
 ```
 
-If the list contains an unprotected stereo/push service, use its exact name:
+For example, this PC currently shows:
+
+```text
+enx00051b901cbf  UP  192.168.123.164/24
+```
+
+Run the tool from its directory. The `list` action is read-only:
 
 ```bash
-/usr/bin/python3 r1_service_control.py <network-interface> on '<exact-name>'
+cd /home/r1-edu/unitree_sdk2_python/my_script/r1_yolo_world_stereo
+/usr/bin/python3 r1_service_control.py enx00051b901cbf list
 ```
+
+Expected table format:
+
+```text
+SERVICE                                    STATUS   PROTECTED
+some_service                               0        no
+another_service                            1        yes
+```
+
+Tested on this R1 on 2026-08-18: the robot returned the following exact,
+unprotected entry:
+
+```text
+stereo_patch_pc1                           0        no
+```
+
+Unitree does not document `ServiceList.status` as an on/off Boolean, so do not
+interpret `0` by itself as stopped or started. Verify the resulting UDP stream.
+For this robot, the concrete start command is:
+
+```bash
+/usr/bin/python3 r1_service_control.py \
+  enx00051b901cbf on stereo_patch_pc1
+```
+
+Search the returned list for likely stereo/video services, but do not use a
+guessed name:
+
+```bash
+/usr/bin/python3 r1_service_control.py enx00051b901cbf list \
+  | grep -Ei 'stereo|video|push'
+```
+
+If the full list contains an unprotected stereo/push service, copy its exact
+case-sensitive name and switch it on:
+
+```bash
+/usr/bin/python3 r1_service_control.py \
+  enx00051b901cbf on '<exact-service-name>'
+```
+
+Verify success from the video packets rather than relying only on the numeric
+service status:
+
+```bash
+sudo tcpdump -ni enx00051b901cbf -c 20 \
+  'udp port 5001 or udp port 5002 or udp port 5003'
+```
+
+Stop the same service when finished:
+
+```bash
+/usr/bin/python3 r1_service_control.py \
+  enx00051b901cbf off stereo_patch_pc1
+```
+
+Possible outcomes:
+
+- `ServiceList failed` or timeout: wrong interface, DDS cannot reach R1, or the
+  R1 `robot_state` service is unavailable.
+- Service not returned: PC1 does not expose it through this API.
+- `PROTECTED=yes`: firmware explicitly prevents remote switching.
+- Switch succeeds but no UDP arrives: R1 Push Service or its target IP still
+  needs configuration; Stereo Patch PC1 alone may not complete the data path.
 
 If the service is absent or protected, this firmware cannot switch it through
-the public `robot_state` API; use the Unitree app or request an official PC1
-control API from Unitree. Do not guess service names.
+the public `robot_state` API. Use Unitree App -> Settings -> Service Status, or
+request an official PC1 control API from Unitree. Unitree also warns that
+`video_hub` may conflict with the stereo push service, so do not try to run both
+camera paths simultaneously.
 
 ## Requirements
 

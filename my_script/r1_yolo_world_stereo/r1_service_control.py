@@ -8,6 +8,14 @@ Always run ``list`` first and use the exact service name returned by the robot.
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+
+# Allow this utility to run directly from its own folder without requiring the
+# SDK package to be installed site-wide.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from unitree_sdk2py.go2.robot_state.robot_state_api import (
@@ -40,6 +48,7 @@ def main() -> int:
     if args.action != "list" and not args.service:
         raise SystemExit("on/off requires the exact service name from list")
 
+    print(f"DDS interface: {args.network_interface}")
     ChannelFactoryInitialize(0, args.network_interface)
     client = RobotStateClient()
     client.SetTimeout(3.0)
@@ -87,4 +96,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
