@@ -35,6 +35,7 @@ not run two motion controllers at the same time.
 | `battery_check.py` | Monitor BMS charge, voltage, current, and temperature data | No |
 | `list_r1_topic.py` | Discover visible `rt/...` DDS topics | No |
 | `r1_mode_check.py` | Monitor FSM, sport state, velocity, and low-level mode | No |
+| `r1_startup.py` | Interactively switch between zero torque, stance, and locomotion | Mode change only |
 | `r1_joint_positions.py` | Capture one read-only snapshot of all 26 joint positions | No |
 | `r1_action.py` | List and execute firmware-provided arm gestures | Yes |
 | `r1_keyboard_control.py` | Keyboard locomotion and lie/stand control | Yes |
@@ -45,6 +46,8 @@ not run two motion controllers at the same time.
 | `led_control.py` | Set the robot LED strip to a chosen RGB color | No |
 | `video_robot_face_detection.py` | Detect faces in the R1 camera stream | No |
 | `r1_face_recognition.py` | Recognize known people in the R1 camera stream | No |
+| `r1_yolo_world_stereo/` | Detect prompted objects and estimate metric distance from stereo video | No |
+| `r1_walk_5_steps_avoid.py` | Walk five measured segments and turn right when the stereo path is blocked | Yes |
 
 ## Monitoring and Discovery
 
@@ -118,6 +121,28 @@ script requires the `cyclonedds` command-line program to be on `PATH`. It scans
 for up to eight seconds and does not publish commands.
 
 ## High-Level Motion
+
+### `r1_startup.py`
+
+Interactively control the robot's startup modes:
+
+```bash
+/usr/bin/python3 my_script/r1_startup.py eth10
+```
+
+The script reads the current FSM immediately and remains active after every
+transition. No mode command is sent until a control key is pressed. Controls
+depend on the current mode:
+
+- Zero torque (`0`): `Space` requests stance (`4`).
+- Stance (`4`): `Space` requests locomotion (`811`), or `0` requests zero
+  torque.
+- Locomotion (`811`): `Space` requests stance (`4`).
+
+Each transition is verified before another key is accepted. Press `Q`, `Esc`,
+or `Ctrl+C` to exit. The script sends no velocity command and leaves the robot
+in its current mode when it exits. Zero torque removes active joint support, so
+only press `0` when the robot is safely supported.
 
 ### `r1_action.py`
 
@@ -408,3 +433,57 @@ python3 -m pip install face_recognition
 The script loads the first detected face encoding from each reference image,
 uses a recognition tolerance of `0.45`, labels matches in the video window, and
 prints recognized names in the terminal.
+
+### `r1_yolo_world_stereo/`
+
+Detect objects with YOLO-World and show their estimated distance using the R1
+left/right RTP streams on UDP ports `5002` and `5003`:
+
+```bash
+cd my_script/r1_yolo_world_stereo
+/usr/bin/python3 r1_yolo_world_stereo_distance.py \
+  --calibration r1_stereo_calibration.npz \
+  --classes 'person,chair,bottle,cup,box,door' \
+  --model yolov8s-worldv2.pt
+```
+
+This is true stereo distance, not a distance inferred from the size of a
+single-camera detection. It rectifies the camera pair, computes disparity and
+3D points, then reports the median depth near the centre of each detected
+object. The default value is optical-axis depth (`Z`) in metres; use
+`--distance-mode euclidean` for straight-line camera-to-object distance.
+
+The stereo push service must be running and the calibration file must match the
+robot's cameras. Install YOLO-World support with:
+
+```bash
+/usr/bin/python3 -m pip install --user ultralytics
+```
+
+See [`r1_yolo_world_stereo/README.md`](r1_yolo_world_stereo/README.md) for
+starting the stereo service, creating a metric calibration, CPU settings, and
+measurement limitations. The result is a perception estimate and is not a
+safety-rated distance sensor.
+
+### `r1_walk_5_steps_avoid.py`
+
+Check the stereo distance before every forward segment. If the central path is
+blocked, turn right and check again; stop after five successful forward
+segments:
+
+```bash
+/usr/bin/python3 my_script/r1_walk_5_steps_avoid.py eth10
+```
+
+By default, each step is a one-second command at `0.25 m/s`, the clearance
+threshold is `1.0 m`, and each right turn is a one-second command at
+`0.5 rad/s`. The script stops rather than moving when depth is unavailable or
+unreliable, and stops if the route is still blocked after 12 turns. Useful
+options are `--clearance-m`, `--forward-speed`, `--turn-speed`, `--max-turns`,
+and `--steps`. The robot must already be in FSM 811; use `--start-locomotion`
+only when it is safe for the script to request that mode.
+
+Frequently adjusted defaults are grouped in the `USER SETTINGS` block near the
+top of `r1_walk_5_steps_avoid.py`, including movement, clearance, camera,
+stereo, and corridor-depth parameters. Command-line options override the
+corresponding defaults.
