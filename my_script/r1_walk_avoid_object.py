@@ -40,12 +40,15 @@ LOCOMOTION_FSM_ID = 811
 # ---------------------------------------------------------------------------
 CALIBRATION_FILE = STEREO_DIR / "r1_stereo_calibration.npz"
 
-FORWARD_STEPS = 5             # Number of successful forward movements.
-CLEARANCE_M = 1.0             # Turn right when an obstacle is closer than this.
-FORWARD_SPEED_M_S = 0.25      # Forward velocity for one movement.
-TURN_SPEED_RAD_S = 0.5        # Right-turn angular velocity (magnitude).
-COMMAND_DURATION_S = 1.0      # R1 firmware works reliably with one-second commands.
-MAX_RIGHT_TURNS = 12          # Stop instead of turning forever.
+FORWARD_STEPS = 2            # Number of successful forward movements.
+CLEARANCE_M = 0.5             # Turn right when an obstacle is closer than this.
+FORWARD_SPEED_M_S = 0.4      # Forward velocity for one movement.
+TURN_SPEED_RAD_S = 1      # Right-turn angular velocity (magnitude).
+COMMAND_DURATION_S = 1   #     # Duration of each movement command in seconds.
+# Some R1 ai_sport firmware returns 127 for every SetVelocity call even when
+# the command is executed in FSM 811. Set False to fail closed on that code.
+ACCEPT_SET_VELOCITY_CODE_127 = True
+MAX_RIGHT_TURNS = 1          # Stop instead of turning forever.
 SETTLE_SECONDS = 0.6          # Pause before measuring after each movement.
 DEPTH_SAMPLES = 3             # All samples must provide a reliable distance.
 
@@ -68,7 +71,6 @@ MIN_VALID_DEPTH_PIXELS = 200
 OBSTACLE_PERCENTILE = 10.0    # Low percentile rejects isolated depth noise.
 
 START_LOCOMOTION_BY_DEFAULT = False
-SKIP_WALK_CONFIRMATION_BY_DEFAULT = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,12 +102,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=START_LOCOMOTION_BY_DEFAULT,
     )
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        default=SKIP_WALK_CONFIRMATION_BY_DEFAULT,
-        help="skip the WALK confirmation",
-    )
     args = parser.parse_args()
 
     if args.steps < 1:
@@ -120,8 +116,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-turns and --samples must be at least 1")
     if args.settle_seconds < 0.0:
         parser.error("--settle-seconds cannot be negative")
-    if COMMAND_DURATION_S <= 0.0:
-        parser.error("COMMAND_DURATION_S must be greater than zero")
+    if not isinstance(COMMAND_DURATION_S, int) or COMMAND_DURATION_S < 1:
+        parser.error("COMMAND_DURATION_S must be a positive integer")
     if not 0.0 <= CORRIDOR_LEFT < CORRIDOR_RIGHT <= 1.0:
         parser.error("CORRIDOR_LEFT/RIGHT must define a valid image region")
     if not 0.0 <= CORRIDOR_TOP < CORRIDOR_BOTTOM <= 1.0:
@@ -191,12 +187,29 @@ def measure_clearance(
 
 def send_motion(client: LocoClient, vx: float, omega: float, label: str) -> None:
     code = client.SetVelocity(vx, 0.0, omega, COMMAND_DURATION_S)
-    if code != 0:
+    if code == 127 and ACCEPT_SET_VELOCITY_CODE_127:
+        print(
+            "Warning: SetVelocity returned firmware code 127; "
+            "continuing in R1 compatibility mode."
+        )
+    elif code != 0:
         raise RuntimeError(f"{label} command failed with code {code}")
     time.sleep(COMMAND_DURATION_S)
     stop_code = client.SetVelocity(0.0, 0.0, 0.0, COMMAND_DURATION_S)
+    if stop_code == 127 and ACCEPT_SET_VELOCITY_CODE_127:
+        return
     if stop_code != 0:
         raise RuntimeError(f"stop after {label} failed with code {stop_code}")
+
+
+def verify_locomotion(client: LocoClient) -> None:
+    code, fsm_id = get_fsm_id(client)
+    if code != 0 or fsm_id is None:
+        raise RuntimeError(f"cannot verify FSM before movement (RPC code {code})")
+    if fsm_id != LOCOMOTION_FSM_ID:
+        raise RuntimeError(
+            f"FSM changed to {fsm_id}; expected locomotion ({LOCOMOTION_FSM_ID})"
+        )
 
 
 def main() -> int:
@@ -204,9 +217,6 @@ def main() -> int:
     print("WARNING: This program autonomously moves the real robot.")
     print("Use a flat area and keep the remote emergency stop ready.")
     print("Stereo depth is perception-only and is not a safety-rated sensor.")
-    if not args.yes and input("Type WALK to continue: ").strip() != "WALK":
-        print("Cancelled; no motion command was sent.")
-        return 1
 
     geometry = StereoGeometry(args.calibration)
     matcher = create_sgbm(args.num_disparities, args.block_size)
@@ -281,11 +291,21 @@ def main() -> int:
                     return 8
                 turns += 1
                 print(f"Blocked (< {args.clearance_m:.2f} m); turning right ({turns}/{args.max_turns}).")
-                send_motion(client, 0.0, -args.turn_speed, "right turn")
+                try:
+                    verify_locomotion(client)
+                    send_motion(client, 0.0, -args.turn_speed, "right turn")
+                except RuntimeError as exc:
+                    print(f"Motion rejected: {exc}. Stopping.")
+                    return 9
                 continue
 
             print(f"Path clear; moving forward step {completed + 1}/{args.steps}.")
-            send_motion(client, args.forward_speed, 0.0, "forward")
+            try:
+                verify_locomotion(client)
+                send_motion(client, args.forward_speed, 0.0, "forward")
+            except RuntimeError as exc:
+                print(f"Motion rejected: {exc}. Stopping.")
+                return 9
             completed += 1
 
         if stop_requested:

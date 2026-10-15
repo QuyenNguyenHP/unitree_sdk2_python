@@ -1,0 +1,26 @@
+{
+  "network_interface": "enxa0cec86d95d6",
+  "server": "http://192.168.0.51:8000",
+  "api_key": "",
+  "language": "",
+  "session_id": "unitree-jarvis",
+  "wake_word": "hey_jarvis",
+  "model_dir": "models",
+  "device": "pipewire",
+  "threshold": 0.5,
+  "silence_seconds": 2.5,
+  "max_seconds": 20.0,
+  "silence_multiplier": 2.0,
+  "min_silence_rms": 100.0,
+  "timeout": 180,
+  "robot_timeout": 10.0,
+  "stream_chunk_seconds": 1.0,
+  "led_refresh_seconds": 1.0,
+  "led_colors": {
+    "waiting": [0, 0, 255],
+    "recording": [255, 0, 0],
+    "processing": [255, 128, 0],
+    "speaking": [0, 255, 0],
+    "off": [0, 0, 0]
+  }
+}

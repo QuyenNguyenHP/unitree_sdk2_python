@@ -47,6 +47,7 @@ not run two motion controllers at the same time.
 | `video_robot_face_detection.py` | Detect faces in the R1 camera stream | No |
 | `r1_face_recognition.py` | Recognize known people in the R1 camera stream | No |
 | `r1_yolo_world_stereo/` | Detect prompted objects and estimate metric distance from stereo video | No |
+| `r1_yolo_world_stereo/r1_service_control.py` | List or switch R1 services through the experimental `robot_state` DDS API | Service change |
 | `r1_walk_5_steps_avoid.py` | Walk five measured segments and turn right when the stereo path is blocked | Yes |
 
 ## Monitoring and Discovery
@@ -465,6 +466,52 @@ starting the stereo service, creating a metric calibration, CPU settings, and
 measurement limitations. The result is a perception estimate and is not a
 safety-rated distance sensor.
 
+### `r1_yolo_world_stereo/r1_service_control.py`
+
+List services exposed by the R1 `robot_state` DDS API. Always run this
+read-only command first and use the exact case-sensitive service name returned
+by the robot:
+
+```bash
+/usr/bin/python3 my_script/r1_yolo_world_stereo/r1_service_control.py \
+  eth10 list
+```
+
+Filter the list when looking for stereo or video services:
+
+```bash
+/usr/bin/python3 my_script/r1_yolo_world_stereo/r1_service_control.py \
+  eth10 list | grep -Ei 'stereo|video|push'
+```
+
+On the tested R1, the unprotected stereo service was named
+`stereo_patch_pc1`. Start it with:
+
+```bash
+/usr/bin/python3 my_script/r1_yolo_world_stereo/r1_service_control.py \
+  eth10 on stereo_patch_pc1
+```
+
+Verify that the stereo RTP streams are actually arriving. The numeric service
+status alone is not a documented on/off Boolean:
+
+```bash
+sudo tcpdump -ni eth10 -c 20 'udp port 5002 or udp port 5003'
+```
+
+Stop the same service when finished:
+
+```bash
+/usr/bin/python3 my_script/r1_yolo_world_stereo/r1_service_control.py \
+  eth10 off stereo_patch_pc1
+```
+
+The tool refuses to switch protected services and refuses names that were not
+returned by `list`. Error `3102` means the DDS request could not be sent or did
+not match the robot service; check the interface, DDS connectivity, firewall,
+and availability of the R1 `robot_state` service. This API is experimental on
+R1 firmware and does not edit startup files on the robot.
+
 ### `r1_walk_5_steps_avoid.py`
 
 Check the stereo distance before every forward segment. If the central path is
@@ -483,7 +530,18 @@ options are `--clearance-m`, `--forward-speed`, `--turn-speed`, `--max-turns`,
 and `--steps`. The robot must already be in FSM 811; use `--start-locomotion`
 only when it is safe for the script to request that mode.
 
+The script does not ask for a `WALK` confirmation. It starts checking the
+stereo path immediately and may send a movement command as soon as the path is
+clear and FSM 811 has been verified.
+
 Frequently adjusted defaults are grouped in the `USER SETTINGS` block near the
 top of `r1_walk_5_steps_avoid.py`, including movement, clearance, camera,
 stereo, and corridor-depth parameters. Command-line options override the
 corresponding defaults.
+
+`COMMAND_DURATION_S` must remain a positive integer. Some R1 `ai_sport`
+firmware returns code `127` for every `SetVelocity` call even when the command
+is executed in FSM 811. `ACCEPT_SET_VELOCITY_CODE_127` enables compatibility
+with that behavior and can be set to `False` to fail closed. The script
+rechecks FSM 811 immediately before every movement and always sends a stop
+command after the configured duration.
